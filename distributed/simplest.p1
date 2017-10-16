@@ -1,0 +1,28 @@
+#coding=utf-8
+import tensorflow as tf
+import numpy as np
+
+###
+X = tf.placeholder("float32")
+Y = tf.placeholder("float32")
+
+w = tf.Variable(0.0, name="weight")
+b = tf.Variable(0.0, name="bias")
+loss = tf.square(Y - tf.multiply(X, w) - b)
+train_op = tf.train.GradientDescentOptimizer(0.0005).minimize(loss)
+###
+
+with tf.Session() as session:
+    session.run(tf.global_variables_initializer())
+    import time
+    init = time.time()
+    for step in range(5000*30):
+        train_x = np.random.randn(1)
+        train_y = 3 * train_x + np.random.randn(1) * 0.5  + 10
+        _, loss_value, weight_hidden, bias_hidden = session.run([train_op, loss, w, b], feed_dict={X:train_x, Y:train_y})
+        if step % 5000 == 0:
+            print("step: %d, loss: %f, weight: %f, biase: %f" %(step, loss_value, weight_hidden, bias_hidden))
+        if loss_value < 0.00001:
+            print("bingo,break.")
+            break
+    print("time cost = ",time.time() - init)
