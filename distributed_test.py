@@ -1,0 +1,54 @@
+#coding=utf-8
+
+import numpy as np
+import tensorflow as tf
+
+# CUDA_VISIBLE_DEVICES='' python distributed_test.py --ps_hosts=192.168.1.47:3333,192.168.1.45:4444 --worker_hosts=192.168.1.47:5555,192.168.1.45:6666 --job_name=ps --task_index=0
+# CUDA_VISIBLE_DEVICES='' python distributed_test.py --ps_hosts=192.168.1.47:3333,192.168.1.45:4444 --worker_hosts=192.168.1.47:5555,192.168.1.45:6666 --job_name=ps --task_index=1
+# CUDA_VISIBLE_DEVICES='0' python distributed_test.py --ps_hosts=192.168.1.47:3333 --worker_hosts=192.168.1.47:5555,192.168.1.45:6666 --job_name=worker --task_index=0
+# CUDA_VISIBLE_DEVICES='0' python distributed_test.py --ps_hosts=192.168.1.47:3333 --worker_hosts=192.168.1.47:5555,192.168.1.45:6666 --job_name=worker --task_index=1
+
+FLAGS = tf.app.flags.FLAGS
+tf.app.flags.DEFINE_string("ps_hosts", "", "Comma-separated list of hostname:port pairs")
+tf.app.flags.DEFINE_string("worker_hosts", "", "Comma-separated list of hostname:port pairs")
+tf.app.flags.DEFINE_string("job_name", "", "One of 'ps' or 'worker'")
+tf.app.flags.DEFINE_integer("task_index", 0, "Index of task within the job")
+
+cluster = tf.train.ClusterSpec({"ps": FLAGS.ps_hosts.split(","), "worker": FLAGS.worker_hosts.split(",")})
+server = tf.train.Server(cluster,job_name=FLAGS.job_name,task_index=FLAGS.task_index)
+
+if FLAGS.job_name == "ps":
+    server.join()
+#elif FLAGS.job_name == "worker":
+    #ps_device="/job:ps/cpu:0",    /gpu:0
+else:
+    with tf.device(tf.train.replica_device_setter(worker_device="/job:worker/task:%d" % FLAGS.task_index,
+          cluster=cluster)):
+        ### 
+        X = tf.placeholder("float32")
+        Y = tf.placeholder("float32")
+
+        w = tf.Variable(0.0, name="weight")
+        b = tf.Variable(0.0, name="bias")
+        loss = tf.square(Y - tf.multiply(X, w) - b)
+        train_op = tf.train.GradientDescentOptimizer(0.0005).minimize(loss)
+        ###
+
+    supervisor = tf.train.Supervisor(is_chief=(FLAGS.task_index == 0), logdir="/nfs/checkpoint/")      
+    with supervisor.managed_session(server.target) as session:
+        ### 
+#        session.run(tf.global_variables_initializer())
+        import time
+        init = time.time()
+        for step in range(5000*30):
+            train_x = np.random.randn(1)
+            train_y = 3 * train_x + np.random.randn(1) * 0.5  + 10
+            _, loss_value, weight_hidden, bias_hidden = session.run([train_op, loss, w, b], feed_dict={X:train_x, Y:train_y})
+            if step % 5000 == 0:
+                print("step: %d, loss: %f, weight: %f, biase: %f" %(step, loss_value, weight_hidden, bias_hidden))
+#            if loss_value < 0.00001:
+#                print("bingo,break.")
+#                break
+        print("time cost = ",time.time() - init)
+        ###
+    supervisor.stop()
